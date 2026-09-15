@@ -25,6 +25,28 @@ jobs:
       - name: Checkout public QA payload
         uses: actions/checkout@v4
 
+      - name: Verify SP-15 payload chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/chunks.sha256 <<'EOF'
+          253cbe2c5da24a8aa8300657f81e5e2a01b1c0e4cba8405aadbe3392165d8b64  payload/sp15v2.part00
+          5fe5f4b705afce8dd2d4abda945c8dd13869616649ee26ff0a25ecd82f1859f6  payload/sp15v2.part01
+          6b5377ab11de0b35b4dadc41cbf4b99590de99f500bdf28ca16969237b3a1109  payload/sp15v2.part02
+          e61f17fa50906b9ce297b3ed69bab5f1bf405eba0fa1daea4326d91850228307  payload/sp15v2.part03
+          1932ecd85d84271bae50a383d12d3e95709603fa631158e7f452f3696fb06e5e  payload/sp15v2.part04
+          475d0f151d67a793204e5f59f89976ac7f6d9aa9bcd9868ee09491e7aad7714a  payload/sp15v2.part05
+          6809e709e68fc57c58f7141459ec8ae5f50a2c4769e37ec1e0a5130036cf92f5  payload/sp15v2.part06
+          837a96e9d6f3cbd176a23ae9a298d45d1807ed6b02477165d0903a77c448f2c8  payload/sp15v2.part07
+          e10d67a3c2908fbf825128074e8074749333399ff89e0af5f518aee2890ae328  payload/sp15v2.part08
+          75c5fd112dfd701c74cff6ed1fe92405282bc6f88af78347b8300f037fb3672f  payload/sp15v2.part09
+          EOF
+          sha256sum -c /tmp/chunks.sha256
+          cat payload/sp15v2.part00 payload/sp15v2.part01 payload/sp15v2.part02 payload/sp15v2.part03 payload/sp15v2.part04 payload/sp15v2.part05 payload/sp15v2.part06 payload/sp15v2.part07 payload/sp15v2.part08 payload/sp15v2.part09 > /tmp/sp15.patch.b64
+          echo '223b1e49f34ccf47cc023a62355cb004121e5f26e2568a4ae868d2c4e6da1764  /tmp/sp15.patch.b64' | sha256sum -c -
+          base64 -d /tmp/sp15.patch.b64 > /tmp/sp15.patch.z
+          echo 'c7012a7a2ebfc39fda4782a94361fab03fc19fdb6afb354864351406ed690c08  /tmp/sp15.patch.z' | sha256sum -c -
+
       - name: Assemble verified SP-15 Japanese Web QA
         shell: bash
         run: |
@@ -41,7 +63,6 @@ jobs:
           CURRENT_PCK="$(sha256sum site/index.pck | awk '{print $1}')"
 
           if [ "$CURRENT_PCK" = "$OLD_PCK" ]; then
-            cat payload/sp15.patch.b64.part00 payload/sp15.patch.b64.part01 | base64 -d > /tmp/sp15.patch.z
             python3 - <<'PY'
           from pathlib import Path
           import hashlib
@@ -63,7 +84,6 @@ jobs:
           expected_size, op_count = struct.unpack_from('<II', patch, pos)
           pos += 8
           out = bytearray()
-
           for _ in range(op_count):
               op = patch[pos:pos + 1]
               pos += 1
@@ -83,7 +103,6 @@ jobs:
               raise SystemExit(f'SP-15 PCK size mismatch: {len(out)} != {expected_size}')
           if hashlib.sha256(out).hexdigest() != NEW_SHA:
               raise SystemExit('SP-15 PCK SHA-256 mismatch after patching')
-
           Path('site/index.pck').write_bytes(out)
           PY
           elif [ "$CURRENT_PCK" = "$NEW_PCK" ]; then
@@ -96,7 +115,6 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
-
           path = Path('site/index.html')
           text = path.read_text()
           text, count = re.subn(r'"index\.pck":\d+', '"index.pck":169200', text, count=1)
