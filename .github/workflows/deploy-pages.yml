@@ -41,39 +41,109 @@ jobs:
           CURRENT_PCK="$(sha256sum site/index.pck | awk '{print $1}')"
 
           if [ "$CURRENT_PCK" = "$OLD_PCK" ]; then
-            cat payload/sp13.patch.b64.part* | base64 -d > /tmp/sp13.patch.z
             python3 - <<'PY'
           from pathlib import Path
+          import base64
+          import hashlib
           import struct
           import zlib
 
+          OLD_SHA = '715daa58133d08d719d77feb84a874e47bf2511a975b8a37834c7aea29fa4a70'
+          NEW_SHA = '86de569c4b19b67353aa3dbc4cec2cd1ea2f69f9cbd2a7b953ce4967a4e7cba7'
+          ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
           old = Path('site/index.pck').read_bytes()
-          patch = zlib.decompress(Path('/tmp/sp13.patch.z').read_bytes())
-          if patch[:4] != b'SPP1':
-              raise SystemExit('Unexpected patch magic')
+          if hashlib.sha256(old).hexdigest() != OLD_SHA:
+              raise SystemExit('Old live PCK changed before patching')
 
-          pos = 4
-          expected_size, op_count = struct.unpack_from('<II', patch, pos)
-          pos += 8
-          out = bytearray()
+          parts = sorted(Path('payload').glob('sp13.patch.b64.part*'))
+          if len(parts) != 4:
+              raise SystemExit(f'Expected 4 patch parts, found {len(parts)}')
+          part_text = [p.read_text().strip() for p in parts]
+          encoded = ''.join(part_text)
 
-          for _ in range(op_count):
-              op = patch[pos:pos + 1]
-              pos += 1
-              if op == b'C':
-                  offset, length = struct.unpack_from('<II', patch, pos)
-                  pos += 8
-                  out += old[offset:offset + length]
-              elif op == b'L':
-                  length = struct.unpack_from('<I', patch, pos)[0]
-                  pos += 4
-                  out += patch[pos:pos + length]
-                  pos += length
-              else:
-                  raise SystemExit('Unknown patch opcode')
+          def apply_patch(patch: bytes) -> bytes:
+              if patch[:4] != b'SPP1':
+                  raise ValueError('Unexpected patch magic')
+              pos = 4
+              expected_size, op_count = struct.unpack_from('<II', patch, pos)
+              pos += 8
+              out = bytearray()
+              for _ in range(op_count):
+                  op = patch[pos:pos + 1]
+                  pos += 1
+                  if op == b'C':
+                      offset, length = struct.unpack_from('<II', patch, pos)
+                      pos += 8
+                      out += old[offset:offset + length]
+                  elif op == b'L':
+                      length = struct.unpack_from('<I', patch, pos)[0]
+                      pos += 4
+                      out += patch[pos:pos + length]
+                      pos += length
+                  else:
+                      raise ValueError('Unknown patch opcode')
+              if len(out) != expected_size:
+                  raise ValueError('Patched PCK size mismatch')
+              return bytes(out)
 
-          if len(out) != expected_size:
-              raise SystemExit(f'Patched PCK size mismatch: {len(out)} != {expected_size}')
+          def validate(candidate: str):
+              try:
+                  compressed = base64.b64decode(candidate, validate=True)
+                  patch = zlib.decompress(compressed)
+                  out = apply_patch(patch)
+              except Exception:
+                  return None
+              return out if hashlib.sha256(out).hexdigest() == NEW_SHA else None
+
+          out = validate(encoded)
+          if out is None:
+              # One character was lost from part01 during the first public payload transfer.
+              # Recover only if the reconstructed final PCK exactly matches the CI-verified SHA.
+              if len(encoded) % 4 != 3:
+                  raise SystemExit('Patch payload is corrupt in an unexpected way')
+
+              start = len(part_text[0])
+              stop = start + len(part_text[1])
+
+              # Estimate where the base64 stream first corrupts the zlib stream, then search nearby.
+              approx = start
+              try:
+                  broken = base64.b64decode(encoded + '=', validate=True)
+                  d = zlib.decompressobj()
+                  for offset in range(0, len(broken), 128):
+                      try:
+                          d.decompress(broken[offset:offset + 128])
+                      except zlib.error:
+                          approx = max(start, min(stop, (offset * 4) // 3))
+                          break
+              except Exception:
+                  pass
+
+              windows = [
+                  range(max(start, approx - 768), min(stop, approx + 256) + 1),
+                  range(max(start, approx - 4096), min(stop, approx + 2048) + 1),
+                  range(start, stop + 1),
+              ]
+              checked = set()
+              for positions in windows:
+                  for pos in positions:
+                      if pos in checked:
+                          continue
+                      checked.add(pos)
+                      for ch in ALPHABET:
+                          candidate = encoded[:pos] + ch + encoded[pos:]
+                          out = validate(candidate)
+                          if out is not None:
+                              print(f'Repaired public patch payload at offset {pos}.')
+                              break
+                      if out is not None:
+                          break
+                  if out is not None:
+                      break
+
+          if out is None:
+              raise SystemExit('Could not safely repair SP-13 patch payload')
 
           Path('site/index.pck').write_bytes(out)
           PY
