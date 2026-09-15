@@ -56,7 +56,7 @@ jobs:
               raise SystemExit('Live SP-13 PCK changed before SP-14 patching')
 
           patch = zlib.decompress(Path('/tmp/sp14.patch.z').read_bytes())
-          if patch[:4] != b'SPP1':
+          if patch[:4] != b'SPP2':
               raise SystemExit('Unexpected SP-14 patch magic')
 
           pos = 4
