@@ -25,7 +25,7 @@ jobs:
       - name: Checkout public QA payload
         uses: actions/checkout@v4
 
-      - name: Assemble verified SP-14 Web QA
+      - name: Assemble verified SP-15 Japanese Web QA
         shell: bash
         run: |
           set -euo pipefail
@@ -36,28 +36,28 @@ jobs:
             curl -fL --retry 3 "$BASE/$f" -o "site/$f"
           done
 
-          OLD_PCK='86de569c4b19b67353aa3dbc4cec2cd1ea2f69f9cbd2a7b953ce4967a4e7cba7'
-          NEW_PCK='581360c3440df53ef5b4d8b6cd2bc44820980a20961bd488519b02699589f7e0'
+          OLD_PCK='581360c3440df53ef5b4d8b6cd2bc44820980a20961bd488519b02699589f7e0'
+          NEW_PCK='34048e925722740e156733047549e6b6ed67518804ac549bd961fc65a1dadeaa'
           CURRENT_PCK="$(sha256sum site/index.pck | awk '{print $1}')"
 
           if [ "$CURRENT_PCK" = "$OLD_PCK" ]; then
-            cat payload/sp14.patch.b64.part* | base64 -d > /tmp/sp14.patch.z
+            cat payload/sp15.patch.b64.part00 payload/sp15.patch.b64.part01 | base64 -d > /tmp/sp15.patch.z
             python3 - <<'PY'
           from pathlib import Path
           import hashlib
           import struct
           import zlib
 
-          OLD_SHA = '86de569c4b19b67353aa3dbc4cec2cd1ea2f69f9cbd2a7b953ce4967a4e7cba7'
-          NEW_SHA = '581360c3440df53ef5b4d8b6cd2bc44820980a20961bd488519b02699589f7e0'
+          OLD_SHA = '581360c3440df53ef5b4d8b6cd2bc44820980a20961bd488519b02699589f7e0'
+          NEW_SHA = '34048e925722740e156733047549e6b6ed67518804ac549bd961fc65a1dadeaa'
 
           old = Path('site/index.pck').read_bytes()
           if hashlib.sha256(old).hexdigest() != OLD_SHA:
-              raise SystemExit('Live SP-13 PCK changed before SP-14 patching')
+              raise SystemExit('Live SP-14 PCK changed before SP-15 patching')
 
-          patch = zlib.decompress(Path('/tmp/sp14.patch.z').read_bytes())
+          patch = zlib.decompress(Path('/tmp/sp15.patch.z').read_bytes())
           if patch[:4] != b'SPP2':
-              raise SystemExit('Unexpected SP-14 patch magic')
+              raise SystemExit('Unexpected SP-15 patch magic')
 
           pos = 4
           expected_size, op_count = struct.unpack_from('<II', patch, pos)
@@ -77,17 +77,17 @@ jobs:
                   out += patch[pos:pos + length]
                   pos += length
               else:
-                  raise SystemExit('Unknown SP-14 patch opcode')
+                  raise SystemExit('Unknown SP-15 patch opcode')
 
           if len(out) != expected_size:
-              raise SystemExit(f'SP-14 PCK size mismatch: {len(out)} != {expected_size}')
+              raise SystemExit(f'SP-15 PCK size mismatch: {len(out)} != {expected_size}')
           if hashlib.sha256(out).hexdigest() != NEW_SHA:
-              raise SystemExit('SP-14 PCK SHA-256 mismatch after patching')
+              raise SystemExit('SP-15 PCK SHA-256 mismatch after patching')
 
           Path('site/index.pck').write_bytes(out)
           PY
           elif [ "$CURRENT_PCK" = "$NEW_PCK" ]; then
-            echo 'SP-14 PCK is already deployed; reusing it.'
+            echo 'SP-15 PCK is already deployed; reusing it.'
           else
             echo "Unexpected live PCK hash: $CURRENT_PCK"
             exit 1
@@ -99,14 +99,14 @@ jobs:
 
           path = Path('site/index.html')
           text = path.read_text()
-          text, count = re.subn(r'"index\.pck":\d+', '"index.pck":169344', text, count=1)
+          text, count = re.subn(r'"index\.pck":\d+', '"index.pck":169200', text, count=1)
           if count != 1:
-              raise SystemExit('Could not update SP-14 index.pck size in index.html')
+              raise SystemExit('Could not update SP-15 index.pck size in index.html')
           path.write_text(text)
           PY
 
-          echo '581360c3440df53ef5b4d8b6cd2bc44820980a20961bd488519b02699589f7e0  site/index.pck' | sha256sum -c -
-          echo '767bc1cf54a6ba560a0657dc4fea013c9ec010db1e78a331947878bdb4ea8248  site/index.html' | sha256sum -c -
+          echo '34048e925722740e156733047549e6b6ed67518804ac549bd961fc65a1dadeaa  site/index.pck' | sha256sum -c -
+          echo '2f9b3ea4896fd562f99277da458c988fd63fcef057c79ce881b768948f388f45  site/index.html' | sha256sum -c -
           echo '11ea19645368f8e73cf337b59cfd7ceeb4ebb51f7a3bbf77d1a5c3ddfedbc522  site/index.wasm' | sha256sum -c -
           echo 'ffc3898b59fba6f5af0c02f76e5ee526cc061e65c7d2d6f4f98186876cea15c4  site/index.js' | sha256sum -c -
 
