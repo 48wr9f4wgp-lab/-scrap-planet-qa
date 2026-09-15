@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "phase": "品質確認",
+  "checks": {
+    "boot": "na",
+    "test": "na",
+    "device": "warn",
+    "save": "na",
+    "analytics": "na",
+    "performance": "na",
+    "release": "ok"
+  },
+  "next": "公開ビルドをiPhone Safariで確認する",
+  "note": "SCRAP PLANETの品質確認用配布リポジトリ。アプリ本体の実装項目はこのRepoでは対象外。",
+  "updated_at": "2026-09-15"
+}
