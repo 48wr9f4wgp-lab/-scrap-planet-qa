@@ -1,0 +1,45 @@
+name: Deploy SCRAP PLANET iPhone QA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download verified Web QA artifact
+        run: |
+          curl -fL --retry 3 'https://sdmntprindiasocentral.oaiusercontent.com/files/00000000-f92c-8211-a248-9fcbf441214e/raw?se=2026-09-15T01%3A29%3A33Z&sp=r&sv=2026-02-06&sr=b&scid=c8dcc5a4-5dff-576e-bc11-a65c90c318d5&skoid=bb372dd6-3b2a-4af2-b355-c26497ba23cd&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-15T00%3A56%3A04Z&ske=2026-09-16T00%3A56%3A04Z&sks=b&skv=2026-02-06&sig=cQsXhoVIBU/rIhTqYz75N4rzWUDZeg/wrKL/FGpCSVU%3D' -o webqa.zip
+          mkdir -p site
+          unzip -q webqa.zip -d site
+          test -s site/index.html
+          test -s site/index.wasm
+          test -s site/index.pck
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
