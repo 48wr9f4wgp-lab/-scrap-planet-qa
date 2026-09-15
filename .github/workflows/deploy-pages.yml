@@ -20,15 +20,86 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
-      - name: Download verified Web QA artifact
+      - name: Checkout public QA payload
+        uses: actions/checkout@v4
+
+      - name: Assemble verified SP-13 Web QA
+        shell: bash
         run: |
-          curl -fL --retry 3 'https://sdmntprindiasocentral.oaiusercontent.com/files/00000000-f92c-8211-a248-9fcbf441214e/raw?se=2026-09-15T01%3A29%3A33Z&sp=r&sv=2026-02-06&sr=b&scid=c8dcc5a4-5dff-576e-bc11-a65c90c318d5&skoid=bb372dd6-3b2a-4af2-b355-c26497ba23cd&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-15T00%3A56%3A04Z&ske=2026-09-16T00%3A56%3A04Z&sks=b&skv=2026-02-06&sig=cQsXhoVIBU/rIhTqYz75N4rzWUDZeg/wrKL/FGpCSVU%3D' -o webqa.zip
+          set -euo pipefail
           mkdir -p site
-          unzip -q webqa.zip -d site
-          test -s site/index.html
-          test -s site/index.wasm
-          test -s site/index.pck
+          BASE='https://48wr9f4wgp-lab.github.io/-scrap-planet-qa'
+
+          for f in index.html index.pck index.js index.wasm index.audio.position.worklet.js index.audio.worklet.js index.png index.icon.png index.apple-touch-icon.png; do
+            curl -fL --retry 3 "$BASE/$f" -o "site/$f"
+          done
+
+          OLD_PCK='715daa58133d08d719d77feb84a874e47bf2511a975b8a37834c7aea29fa4a70'
+          NEW_PCK='86de569c4b19b67353aa3dbc4cec2cd1ea2f69f9cbd2a7b953ce4967a4e7cba7'
+          CURRENT_PCK="$(sha256sum site/index.pck | awk '{print $1}')"
+
+          if [ "$CURRENT_PCK" = "$OLD_PCK" ]; then
+            cat payload/sp13.patch.b64.part* | base64 -d > /tmp/sp13.patch.z
+            python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          import zlib
+
+          old = Path('site/index.pck').read_bytes()
+          patch = zlib.decompress(Path('/tmp/sp13.patch.z').read_bytes())
+          if patch[:4] != b'SPP1':
+              raise SystemExit('Unexpected patch magic')
+
+          pos = 4
+          expected_size, op_count = struct.unpack_from('<II', patch, pos)
+          pos += 8
+          out = bytearray()
+
+          for _ in range(op_count):
+              op = patch[pos:pos + 1]
+              pos += 1
+              if op == b'C':
+                  offset, length = struct.unpack_from('<II', patch, pos)
+                  pos += 8
+                  out += old[offset:offset + length]
+              elif op == b'L':
+                  length = struct.unpack_from('<I', patch, pos)[0]
+                  pos += 4
+                  out += patch[pos:pos + length]
+                  pos += length
+              else:
+                  raise SystemExit('Unknown patch opcode')
+
+          if len(out) != expected_size:
+              raise SystemExit(f'Patched PCK size mismatch: {len(out)} != {expected_size}')
+
+          Path('site/index.pck').write_bytes(out)
+          PY
+          elif [ "$CURRENT_PCK" = "$NEW_PCK" ]; then
+            echo 'SP-13 PCK is already deployed; reusing it.'
+          else
+            echo "Unexpected live PCK hash: $CURRENT_PCK"
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('site/index.html')
+          text = path.read_text()
+          text, count = re.subn(r'"index\.pck":\d+', '"index.pck":155872', text, count=1)
+          if count != 1:
+              raise SystemExit('Could not update index.pck size in index.html')
+          path.write_text(text)
+          PY
+
+          echo '86de569c4b19b67353aa3dbc4cec2cd1ea2f69f9cbd2a7b953ce4967a4e7cba7  site/index.pck' | sha256sum -c -
+          echo '28d8436cb49a9bae63766824b535486b63dfd9c4cbf0346042df0c4042677622  site/index.html' | sha256sum -c -
+          echo '11ea19645368f8e73cf337b59cfd7ceeb4ebb51f7a3bbf77d1a5c3ddfedbc522  site/index.wasm' | sha256sum -c -
+          echo 'ffc3898b59fba6f5af0c02f76e5ee526cc061e65c7d2d6f4f98186876cea15c4  site/index.js' | sha256sum -c -
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
