@@ -1,65 +1,17 @@
-name: Deploy SCRAP PLANET iPhone QA
+name: SCRAP PLANET iPhone QA deployment gate
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
-  deploy:
+  gate:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
-      - name: Checkout public QA repo
-        uses: actions/checkout@v4
-
-      - name: Download verified SP-19 Web QA artifact
-        shell: bash
+      - name: Deployment gate
         run: |
-          set -euo pipefail
-          ARTIFACT_URL='https://sdmntprcentralus.oaiusercontent.com/files/00000000-c57c-81f5-b040-37d06ad8f8ec/raw?se=2026-09-16T11%3A51%3A06Z&sp=r&sv=2026-02-06&sr=b&scid=a07ba7b2-7ad9-5cdd-8abc-9fb0738845d5&skoid=bb372dd6-3b2a-4af2-b355-c26497ba23cd&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-16T01%3A22%3A35Z&ske=2026-09-17T01%3A22%3A35Z&sks=b&skv=2026-02-06&sig=mhsZIZqDNUO7zbWxm9vzL2PYTjq3/QM9PTLho0X6u1c%3D'
-          curl -fL --retry 3 "$ARTIFACT_URL" -o webqa.zip
-          echo '763b94c0cf9047753532a6292f492606340be1faec38583c08e2f26a4a14367c  webqa.zip' | sha256sum -c -
-          rm -rf site
-          mkdir -p site
-          unzip -q webqa.zip -d site
-
-      - name: Verify SP-19 payload
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s site/index.html
-          test -s site/index.wasm
-          test -s site/index.pck
-          test -s site/index.js
-          echo '348050e11795a154127dee482e702aa0f1d6f898eba16f284eeef0b6f1e2ae5e  site/index.html' | sha256sum -c -
-          echo '99c9488d0e2d5cf4f909835079875de94fef6d6f69eebdd3aa3658b8feee7f6c  site/index.pck' | sha256sum -c -
-          echo '11ea19645368f8e73cf337b59cfd7ceeb4ebb51f7a3bbf77d1a5c3ddfedbc522  site/index.wasm' | sha256sum -c -
-          echo 'ffc3898b59fba6f5af0c02f76e5ee526cc061e65c7d2d6f4f98186876cea15c4  site/index.js' | sha256sum -c -
-          test "$(stat -c%s site/index.pck)" = '324160'
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          echo 'The public QA site is already deployed.'
+          echo 'A verified private build artifact and its SHA-256 values are injected only during an approved QA update.'
+          echo 'This dormant workflow intentionally contains no expiring artifact URL and performs no deployment by itself.'
