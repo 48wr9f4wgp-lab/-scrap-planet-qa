@@ -22,93 +22,33 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Checkout public QA payload
+      - name: Checkout public QA repo
         uses: actions/checkout@v4
 
-      - name: Assemble verified SP-17 Web QA
+      - name: Download verified SP-19 Web QA artifact
         shell: bash
         run: |
           set -euo pipefail
+          ARTIFACT_URL='https://sdmntprcentralus.oaiusercontent.com/files/00000000-c57c-81f5-b040-37d06ad8f8ec/raw?se=2026-09-16T11%3A51%3A06Z&sp=r&sv=2026-02-06&sr=b&scid=a07ba7b2-7ad9-5cdd-8abc-9fb0738845d5&skoid=bb372dd6-3b2a-4af2-b355-c26497ba23cd&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-16T01%3A22%3A35Z&ske=2026-09-17T01%3A22%3A35Z&sks=b&skv=2026-02-06&sig=mhsZIZqDNUO7zbWxm9vzL2PYTjq3/QM9PTLho0X6u1c%3D'
+          curl -fL --retry 3 "$ARTIFACT_URL" -o webqa.zip
+          echo '763b94c0cf9047753532a6292f492606340be1faec38583c08e2f26a4a14367c  webqa.zip' | sha256sum -c -
+          rm -rf site
           mkdir -p site
-          BASE='https://48wr9f4wgp-lab.github.io/-scrap-planet-qa'
+          unzip -q webqa.zip -d site
 
-          for f in index.html index.pck index.js index.wasm index.audio.position.worklet.js index.audio.worklet.js index.png index.icon.png index.apple-touch-icon.png; do
-            curl -fL --retry 3 "$BASE/$f" -o "site/$f"
-          done
-
-          echo '03e70cd5677d43e886c446b4638f621f4b575bee5ed9b7ef06a2643b5257cbe9  payload/sp17.patch.z' | sha256sum -c -
-
-          OLD_PCK='189ba7fa89ae48515436e42e54fe72b41a08f082780c36b1edf43b5666591217'
-          NEW_PCK='d1900721c9ff701ce279e79281bddbf75f3dd63785438f4e0c9520342a1d7f1c'
-          CURRENT_PCK="$(sha256sum site/index.pck | awk '{print $1}')"
-
-          if [ "$CURRENT_PCK" = "$OLD_PCK" ]; then
-            python3 - <<'PY'
-          from pathlib import Path
-          import hashlib
-          import struct
-          import zlib
-
-          OLD_SHA = '189ba7fa89ae48515436e42e54fe72b41a08f082780c36b1edf43b5666591217'
-          NEW_SHA = 'd1900721c9ff701ce279e79281bddbf75f3dd63785438f4e0c9520342a1d7f1c'
-
-          old = Path('site/index.pck').read_bytes()
-          if hashlib.sha256(old).hexdigest() != OLD_SHA:
-              raise SystemExit('Live SP-16 PCK changed before SP-17 patching')
-
-          patch = zlib.decompress(Path('payload/sp17.patch.z').read_bytes())
-          if patch[:4] != b'SPP2':
-              raise SystemExit('Unexpected SP-17 patch magic')
-
-          pos = 4
-          expected_size, op_count = struct.unpack_from('<II', patch, pos)
-          pos += 8
-          out = bytearray()
-
-          for _ in range(op_count):
-              op = patch[pos:pos + 1]
-              pos += 1
-              if op == b'C':
-                  offset, length = struct.unpack_from('<II', patch, pos)
-                  pos += 8
-                  out += old[offset:offset + length]
-              elif op == b'L':
-                  length = struct.unpack_from('<I', patch, pos)[0]
-                  pos += 4
-                  out += patch[pos:pos + length]
-                  pos += length
-              else:
-                  raise SystemExit('Unknown SP-17 patch opcode')
-
-          if len(out) != expected_size:
-              raise SystemExit(f'SP-17 PCK size mismatch: {len(out)} != {expected_size}')
-          if hashlib.sha256(out).hexdigest() != NEW_SHA:
-              raise SystemExit('SP-17 PCK SHA-256 mismatch after patching')
-          Path('site/index.pck').write_bytes(out)
-          PY
-          elif [ "$CURRENT_PCK" = "$NEW_PCK" ]; then
-            echo 'SP-17 PCK is already deployed; reusing it.'
-          else
-            echo "Unexpected live PCK hash: $CURRENT_PCK"
-            exit 1
-          fi
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          path = Path('site/index.html')
-          text = path.read_text()
-          text, count = re.subn(r'"index\.pck":\d+', '"index.pck":184956', text, count=1)
-          if count != 1:
-              raise SystemExit('Could not update SP-17 index.pck size in index.html')
-          path.write_text(text)
-          PY
-
-          echo 'd1900721c9ff701ce279e79281bddbf75f3dd63785438f4e0c9520342a1d7f1c  site/index.pck' | sha256sum -c -
-          echo '64f6a23b5152b0e7cd0f50e414cf25935e10e0642ab74e04c68318df812d0284  site/index.html' | sha256sum -c -
+      - name: Verify SP-19 payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s site/index.html
+          test -s site/index.wasm
+          test -s site/index.pck
+          test -s site/index.js
+          echo '348050e11795a154127dee482e702aa0f1d6f898eba16f284eeef0b6f1e2ae5e  site/index.html' | sha256sum -c -
+          echo '99c9488d0e2d5cf4f909835079875de94fef6d6f69eebdd3aa3658b8feee7f6c  site/index.pck' | sha256sum -c -
           echo '11ea19645368f8e73cf337b59cfd7ceeb4ebb51f7a3bbf77d1a5c3ddfedbc522  site/index.wasm' | sha256sum -c -
           echo 'ffc3898b59fba6f5af0c02f76e5ee526cc061e65c7d2d6f4f98186876cea15c4  site/index.js' | sha256sum -c -
+          test "$(stat -c%s site/index.pck)" = '324160'
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
